@@ -95,7 +95,7 @@ If any of these are unclear from context, ask **at most 3 short questions**.
 - Non-React apps (Node, Python, Go, etc.)
 - Batch automation or backend services
 - Wants explicit control over signing/execution pipeline
-- **Yield (Earn) deposits or withdrawals from an agent, CLI, or backend** — use the Yield endpoints (`YieldGetMarkets`, `YieldCreateEnterAction`, `YieldCreateExitAction`). See `YIELD_API_RECIPES.md`. The Earn widget is only for React UIs.
+- **Yield (Earn) deposits or withdrawals from an agent, CLI, or backend** — see `YIELD_API_RECIPES.md`. Discover with `YieldGetMarkets`, withdraw with `YieldCreateExitAction`. For deposits, the **default and recommended** path is swap-and-deposit with **any** input token: a `QuoteIntent` with `destinationCallData` so the user signs one transaction and Trails swaps (and bridges if needed) into the vault's token and runs the deposit. Only call `YieldCreateEnterAction` directly when the user already holds the vault's token. The Earn widget is only for React UIs.
 
 ---
 
@@ -409,7 +409,7 @@ import { getSupportedChains, getSupportedTokens, getChainInfo } from '@0xtrails/
 | Pay  | EXACT_OUTPUT | User pays whatever needed to get exact destination amount |
 | Fund | EXACT_INPUT  | User picks input amount, destination computed |
 | Swap | Both | User chooses direction |
-| Earn | EXACT_INPUT  | Deposit into DeFi protocols. In React, use the Earn widget. In an agent, CLI, or backend, use the Yield API endpoints (see `YIELD_API_RECIPES.md`). |
+| Earn | EXACT_INPUT  | Deposit into DeFi protocols with any input token. React: Earn widget. Agent/CLI/backend: Yield API, defaulting to swap-and-deposit via `QuoteIntent` + `destinationCallData` (see `YIELD_API_RECIPES.md`). |
 
 ---
 

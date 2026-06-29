@@ -10,6 +10,9 @@
 
 const BASE = 'https://trails-api.sequence.app'
 
+// Sentinel Trails replaces with the actual post-swap amount inside destinationCallData.
+const TRAILS_ROUTER_PLACEHOLDER_AMOUNT = '0x' + 'f'.repeat(64)
+
 async function rpc<T = any>(method: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}/rpc/Trails/${method}`, {
     method: 'POST',
@@ -43,7 +46,43 @@ async function signAndSend(tx: WalletTx): Promise<string> {
   throw new Error(`Implement signAndSend with your wallet. Got: ${JSON.stringify(tx)}`)
 }
 
-/** Deposit `amount` (human units) into a market on its own chain. */
+/**
+ * RECOMMENDED deposit path: deposit with ANY input token. Trails swaps (and bridges if
+ * needed) the user's token into the vault's token, then runs `depositCallData`, all from a
+ * single signed transaction. Build `depositCallData` with TRAILS_ROUTER_PLACEHOLDER_AMOUNT
+ * in the amount slot (e.g. ERC-4626 deposit(assets, receiver) or Aave supply(asset, amount,
+ * onBehalfOf, referralCode)); get `target`/`vaultToken` from the market and its enter action.
+ */
+async function depositAnyToken(opts: {
+  owner: string
+  origin: { chainId: number; token: string; amountWei: string } // what the user holds
+  vault: { chainId: number; token: string; target: string; depositCallData: string }
+}): Promise<string> {
+  const { intent } = await rpc('QuoteIntent', {
+    ownerAddress: opts.owner,
+    originChainId: opts.origin.chainId,
+    originTokenAddress: opts.origin.token,
+    originTokenAmount: opts.origin.amountWei,
+    destinationChainId: opts.vault.chainId,
+    destinationTokenAddress: opts.vault.token,
+    destinationToAddress: opts.vault.target,
+    destinationApproveAddress: opts.vault.target,
+    destinationCallData: opts.vault.depositCallData,
+    tradeType: 'EXACT_INPUT',
+  })
+  const { intentId } = await rpc('CommitIntent', { intent })
+  const hash = await signAndSend(toTx(JSON.stringify(intent.depositTransaction)))
+  await rpc('ExecuteIntent', { intentId, depositTransactionHash: hash })
+  let receipt: any
+  do { receipt = await rpc('WaitIntentReceipt', { intentId }) } while (!receipt.done)
+  if (receipt.intentReceipt.status !== 'SUCCEEDED') throw new Error('deposit failed; origin deposit refunded')
+  return hash
+}
+
+/**
+ * Shortcut: deposit when the user already holds the vault's token, on the vault's chain.
+ * For any other token, use depositAnyToken (the recommended path above).
+ */
 async function deposit(marketId: string, owner: string, amount: string): Promise<string[]> {
   const { action } = await rpc('YieldCreateEnterAction', {
     earnMarketId: marketId, userWalletAddress: owner, args: { amount },
@@ -110,4 +149,4 @@ async function main() {
 
 main().catch((e) => { console.error(e); process.exit(1) })
 
-export { deposit, withdraw, depositCrossChain }
+export { depositAnyToken, deposit, withdraw, depositCrossChain, TRAILS_ROUTER_PLACEHOLDER_AMOUNT }
