@@ -69,7 +69,7 @@ Before generating any code, determine:
 1. **Framework**: React/Next.js, Node.js, or other?
 2. **Wallet stack**: wagmi, viem, ethers, or none?
 3. **UI needed**: Do they want pre-built UI or custom?
-4. **Use case**: Pay, Swap, Fund, or Earn?
+4. **Use case**: Pay, Swap, Fund, or Earn? (For Earn outside a React UI, go straight to the Yield API endpoints — see `YIELD_API_RECIPES.md`.)
 5. **Calldata**: Do they need to execute a contract function at destination?
 
 If any of these are unclear from context, ask **at most 3 short questions**.
@@ -95,6 +95,7 @@ If any of these are unclear from context, ask **at most 3 short questions**.
 - Non-React apps (Node, Python, Go, etc.)
 - Batch automation or backend services
 - Wants explicit control over signing/execution pipeline
+- **Yield (Earn) deposits or withdrawals from an agent, CLI, or backend** — use the Yield endpoints (`YieldGetMarkets`, `YieldCreateEnterAction`, `YieldCreateExitAction`). See `YIELD_API_RECIPES.md`. The Earn widget is only for React UIs.
 
 ---
 
@@ -408,7 +409,7 @@ import { getSupportedChains, getSupportedTokens, getChainInfo } from '@0xtrails/
 | Pay  | EXACT_OUTPUT | User pays whatever needed to get exact destination amount |
 | Fund | EXACT_INPUT  | User picks input amount, destination computed |
 | Swap | Both | User chooses direction |
-| Earn | EXACT_INPUT  | Deposit into DeFi protocols |
+| Earn | EXACT_INPUT  | Deposit into DeFi protocols. In React, use the Earn widget. In an agent, CLI, or backend, use the Yield API endpoints (see `YIELD_API_RECIPES.md`). |
 
 ---
 
@@ -420,5 +421,6 @@ See `docs/` for detailed guides:
 - `WIDGET_RECIPES.md` — Widget examples
 - `HEADLESS_SDK_RECIPES.md` — Hooks patterns
 - `API_RECIPES.md` — Server-side flows
+- `YIELD_API_RECIPES.md` — Yield (Earn) deposits and withdrawals via the Direct API, with an external signer
 - `CALLDATA_GUIDE.md` — Encoding destination calls
 - `TROUBLESHOOTING.md` — Common issues
