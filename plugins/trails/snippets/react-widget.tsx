@@ -6,7 +6,7 @@
  *
  * SETUP:
  * 1. Get your API key from https://dashboard.trails.build
- * 2. Install: npm install @0xtrails/trails (or pnpm/yarn)
+ * 2. Install: npm install 0xtrails (or pnpm/yarn)
  * 3. Set NEXT_PUBLIC_TRAILS_API_KEY in your environment variables
  */
 
@@ -19,7 +19,7 @@
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { mainnet, base, arbitrum } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TrailsProvider } from '@0xtrails/trails';
+import { TrailsProvider } from '0xtrails';
 import { injected, walletConnect } from 'wagmi/connectors';
 
 const wagmiConfig = createConfig({
@@ -53,7 +53,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 // 2. PAY MODE - Exact output for payments
 // ============================================
 
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 export function PaymentWidget() {
   return (
@@ -122,7 +122,7 @@ const VAULT_ABI = [
 
 // Placeholder amount - Trails replaces with actual output
 const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
 
 export function VaultDepositWidget({ userAddress }: { userAddress: `0x${string}` }) {

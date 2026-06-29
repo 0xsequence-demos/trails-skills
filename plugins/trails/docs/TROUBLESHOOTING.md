@@ -126,7 +126,7 @@ NEXT_PUBLIC_TRAILS_API_KEY=pk_... # Client-side (exposed)
 **Solution**: Check supported chains:
 
 ```typescript
-import { getSupportedChains } from '@0xtrails/trails';
+import { getSupportedChains } from '0xtrails';
 
 const chains = await getSupportedChains();
 console.log('Supported chains:', chains.map(c => `${c.name} (${c.chainId})`));
@@ -139,7 +139,7 @@ console.log('Supported chains:', chains.map(c => `${c.name} (${c.chainId})`));
 **Solution**: Verify token support:
 
 ```typescript
-import { getSupportedTokens } from '@0xtrails/trails';
+import { getSupportedTokens } from '0xtrails';
 
 const tokens = await getSupportedTokens({ chainId: 8453 });
 const isSupported = tokens.some(t => 
@@ -293,16 +293,33 @@ const result = await client.simulateContract({
 
 ### Placeholder not replaced
 
-**Cause**: Using wrong placeholder value or in wrong context.
+**Cause**: Using the wrong placeholder value, or in the wrong context.
 
-**Solution**: Use exact placeholder:
+**Solution**: Use the exact hydration sentinel (or import it / use `dynamic()` from `0xtrails`):
 ```typescript
-// ✅ Correct placeholder
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+// ✅ Correct sentinel — keccak256("sequence.trails.hydrate.amount.sentinel.v1")
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
-// ❌ Wrong (missing leading 0x or wrong length)
-const WRONG = BigInt('0xffffffff');
+// ❌ Wrong — 0xffff…ff is uint256 max, NOT the sentinel. The executor treats it as a literal
+//    amount and the destination call reverts (intent ends REFUNDED).
+const WRONG = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
 ```
+
+### Intent ends `REFUNDED` ("call reverted: refund triggered on destination")
+
+The origin deposit landed but the destination call reverted, so Trails refunded you (your
+origin or swapped token is back in your wallet — funds are not lost). For a swap-and-deposit
+this almost always means one of:
+
+1. **Wrong placeholder** — `0xffff…ff` instead of the `0xfcbc96b9…` sentinel (see above). The
+   supply tried to pull a near-infinite amount.
+2. **Deprecated single-tx shape** — you pointed `destinationToAddress` at the vault with a bare
+   `supply(...)` + placeholder (the pre-v1.5 `TrailsRouter` pattern). Use the v1.5 hydrate-multicall
+   built by the SDK, or the two-step path (swap → `YieldCreateEnterAction`). See `YIELD_API_RECIPES.md`.
+3. **Reserve not actually open** — the market is listed as enterable but the underlying reserve
+   is frozen/paused or its supply cap is full, so `supply` reverts. Pick another market.
+
+Inspect `WaitIntentReceipt` → `intentReceipt.destinationTransaction.statusReason` to confirm.
 
 ---
 
@@ -321,7 +338,7 @@ const WRONG = BigInt('0xffffffff');
 2. Verify imports:
 ```typescript
 // Named import, not default
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 ```
 
 3. Check if styles are loading (may need CSS import depending on bundler)

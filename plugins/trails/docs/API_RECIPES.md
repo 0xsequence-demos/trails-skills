@@ -25,15 +25,15 @@ TRAILS_API_KEY=your_api_key
 ### 2. Install
 
 ```bash
-pnpm add @0xtrails/trails-api
+pnpm add @0xtrails/api
 # or
-npm install @0xtrails/trails-api
+npm install @0xtrails/api
 ```
 
 ### 3. Initialize Client
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({
   apiKey: process.env.TRAILS_API_KEY!,
@@ -287,7 +287,7 @@ If you're building a Node.js/TypeScript application, the SDK client provides a m
 ### Core Flow: Quote → Commit → Execute → Wait
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -462,7 +462,7 @@ const prices = await trails.getTokenPrices({
 ## Error Handling
 
 ```typescript
-import { TrailsAPI, TrailsError } from '@0xtrails/trails-api';
+import { TrailsAPI, TrailsError } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -506,7 +506,7 @@ async function safeExecute() {
 ## Batch Processing Example
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -577,7 +577,7 @@ If you prefer webhooks over polling:
 ```typescript
 // In your webhook handler (e.g., Next.js API route)
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyTrailsWebhook } from '@0xtrails/trails-api';
+import { verifyTrailsWebhook } from '@0xtrails/api';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -612,7 +612,7 @@ export async function POST(request: NextRequest) {
 
 ```typescript
 import express from 'express';
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const app = express();
 app.use(express.json());

@@ -56,17 +56,24 @@ console.log(calldata);
 
 ---
 
-## The Placeholder Pattern (Fund Mode)
+## The Placeholder Pattern (Fund / Earn, intent protocol v1.5)
 
-In **Fund mode** (EXACT_INPUT), you don't know the exact output amount until execution. Use a placeholder that Trails will replace:
+When you don't know the exact output amount until execution, mark the amount slot with the
+**hydration sentinel**. The v1.5 executor (`HydrateProxy`) replaces it with the wallet's
+runtime balance. There is a matching **self-address sentinel** for address slots (e.g. a swap
+`recipient`) that should resolve to the intent wallet.
 
 ```typescript
 import { encodeFunctionData } from 'viem';
+// Prefer importing these from the SDK instead of hardcoding:
+//   import { TRAILS_HYDRATE_PLACEHOLDER_AMOUNT, TRAILS_HYDRATE_SELF_ADDRESS, dynamic, self } from '0xtrails';
 
-// The placeholder constant - Trails recognizes and replaces this
+// keccak256("sequence.trails.hydrate.amount.sentinel.v1") — the amount sentinel.
 const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
+// uint160(keccak256("sequence.trails.hydrate.address.sentinel.v1")) — the self-address sentinel.
+const SELF_ADDRESS = '0xd80d3a37a85094663c36c062e5ef689f2bf54fca';
 
 const vaultAbi = [
   {
@@ -85,6 +92,27 @@ const calldata = encodeFunctionData({
   functionName: 'deposit',
   args: [PLACEHOLDER_AMOUNT, '0xUserAddress'],
 });
+```
+
+> ⚠️ **Do not use `0xffff…ff` (uint256 max).** That is not the sentinel — the executor treats
+> it as a literal amount, the call tries to pull a near-infinite balance, and the intent ends
+> `REFUNDED`. The sentinel is `0xfcbc96b9…`.
+
+**Easier: let the SDK place the sentinels.** With `0xtrails` you compose typed actions and
+pass `dynamic()` / `self()` instead of hand-encoding the sentinel:
+
+```typescript
+import { swap, lend, dynamic, resolveActionsToCalls, encodeMulticallHydrateExecute } from '0xtrails';
+
+const calls = resolveActionsToCalls({
+  chainId: 137,
+  actions: [
+    swap({ tokenIn: USDC, tokenOut: vaultToken, amountIn: '0.15' }),
+    lend({ marketId, amount: dynamic() }),   // dynamic() == the amount sentinel
+  ],
+});
+const destinationCallData = encodeMulticallHydrateExecute({ calls, token: vaultToken, sweepTarget: userAddress });
+// then QuoteIntent with destinationToAddress = the Trails v1.5 executor, destinationCallData, EXACT_OUTPUT
 ```
 
 ### When to Use Placeholder
@@ -106,7 +134,7 @@ const calldata = encodeFunctionData({
 ```typescript
 import { encodeFunctionData } from 'viem';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 const erc4626Abi = [
   {
@@ -132,7 +160,7 @@ const calldata = encodeFunctionData({
 ```typescript
 import { encodeFunctionData } from 'viem';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 const stakingAbi = [
   {
@@ -157,7 +185,7 @@ const calldata = encodeFunctionData({
 ```typescript
 import { encodeFunctionData } from 'viem';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 const lpAbi = [
   {
@@ -188,7 +216,7 @@ Some contracts require approval before deposit. If the destination contract hand
 ```typescript
 import { encodeFunctionData } from 'viem';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 // If using a contract that supports multicall
 const multicallAbi = [
@@ -221,10 +249,10 @@ const depositCall = encodeFunctionData({
 ## Using Calldata with Widget
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 import { encodeFunctionData } from 'viem';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 const vaultAbi = [
   {
@@ -265,11 +293,11 @@ function VaultDeposit({ vaultAddress, userAddress }: {
 ## Using Calldata with Headless SDK
 
 ```tsx
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 import { encodeFunctionData } from 'viem';
 import { useState } from 'react';
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 function useVaultDeposit(vaultAddress: `0x${string}`, userAddress: `0x${string}`) {
   const [inputAmount, setInputAmount] = useState('');
@@ -303,12 +331,12 @@ function useVaultDeposit(vaultAddress: `0x${string}`, userAddress: `0x${string}`
 ## Using Calldata with Direct API
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 import { encodeFunctionData } from 'viem';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
-const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
 async function depositToVault(
   vaultAddress: string,

@@ -6,7 +6,7 @@
  *
  * NOTE: This is a utility snippet. To use Trails with calldata:
  * 1. Get your API key from https://dashboard.trails.build
- * 2. Install @0xtrails/trails (Widget/Headless) or @0xtrails/trails-api (Direct API)
+ * 2. Install 0xtrails (Widget/Headless) or @0xtrails/api (Direct API)
  * 3. Use these encoding functions to generate calldata for your intents
  */
 
@@ -22,7 +22,7 @@ import { encodeFunctionData, decodeFunctionData, parseAbi } from 'viem';
  * the final amount until execution.
  */
 export const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
 
 // ============================================

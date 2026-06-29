@@ -2,7 +2,7 @@
 
 Build custom UIs with Trails hooks and programmatic control.
 
-> **Note**: React 19.1+ is recommended for best compatibility with Trails. React 18+ is supported but may have compatibility issues.
+> **Note**: The SDK (`0xtrails`) supports React 18 or 19 (peer dependency `^18.0.0 || ^19.0.0`).
 
 ## Setup Requirements
 
@@ -17,7 +17,7 @@ NEXT_PUBLIC_TRAILS_API_KEY=your_api_key
 ### 2. Install
 
 ```bash
-pnpm add @0xtrails/trails
+pnpm add 0xtrails
 ```
 
 ### 3. Provider + Modal (Required)
@@ -32,7 +32,7 @@ The headless SDK requires:
 
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TrailsProvider, TrailsHookModal } from '@0xtrails/trails';
+import { TrailsProvider, TrailsHookModal } from '0xtrails';
 import { wagmiConfig } from './wagmi-config';
 
 const queryClient = new QueryClient();
@@ -60,7 +60,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 The primary hook for executing Trails intents. Executes automatically when ready.
 
 ```tsx
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 function SendButton() {
   const { quote, isPending, isSuccess, isError, error } = useQuote({
@@ -89,7 +89,7 @@ function SendButton() {
 ### useSupportedChains
 
 ```tsx
-import { useSupportedChains } from '@0xtrails/trails';
+import { useSupportedChains } from '0xtrails';
 
 function ChainSelector() {
   const { data: chains, isLoading, error } = useSupportedChains();
@@ -112,7 +112,7 @@ function ChainSelector() {
 ### useSupportedTokens
 
 ```tsx
-import { useSupportedTokens } from '@0xtrails/trails';
+import { useSupportedTokens } from '0xtrails';
 
 function TokenSelector({ chainId }: { chainId: number }) {
   const { data: tokens, isLoading } = useSupportedTokens({ chainId });
@@ -136,7 +136,7 @@ function TokenSelector({ chainId }: { chainId: number }) {
 Get a combined token list for UI display:
 
 ```tsx
-import { useTokenList } from '@0xtrails/trails';
+import { useTokenList } from '0xtrails';
 
 function TokenList() {
   const { data: tokenList } = useTokenList();
@@ -165,7 +165,7 @@ import {
   useQuote,
   useSupportedChains,
   useSupportedTokens,
-} from '@0xtrails/trails';
+} from '0xtrails';
 import { useAccount } from 'wagmi';
 import { parseUnits } from 'viem';
 
@@ -270,7 +270,7 @@ export function CustomSwapUI() {
 ## Intent History
 
 ```tsx
-import { useIntentHistory } from '@0xtrails/trails';
+import { useIntentHistory } from '0xtrails';
 import { useAccount } from 'wagmi';
 
 function TransactionHistory() {
@@ -297,7 +297,7 @@ function TransactionHistory() {
 ## With Calldata (Destination Contract Call)
 
 ```tsx
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 import { encodeFunctionData } from 'viem';
 import { useState } from 'react';
 
@@ -318,7 +318,7 @@ function VaultDeposit({ vaultAddress, userAddress }: {
   const [amount, setAmount] = useState('');
 
   // Use placeholder for Fund mode (EXACT_INPUT)
-  const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+  const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
   const calldata = amount
     ? encodeFunctionData({
@@ -369,7 +369,7 @@ import {
   getSupportedChains,
   getSupportedTokens,
   getChainInfo,
-} from '@0xtrails/trails';
+} from '0xtrails';
 
 // Get all supported chains
 const chains = await getSupportedChains();
@@ -386,7 +386,7 @@ const baseInfo = await getChainInfo(8453);
 ## Error Handling Pattern
 
 ```tsx
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 function RobustSendButton() {
   const { quote, isPending, isSuccess, error, refetch } = useQuote({

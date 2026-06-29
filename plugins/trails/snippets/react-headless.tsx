@@ -6,7 +6,7 @@
  *
  * SETUP:
  * 1. Get your API key from https://dashboard.trails.build
- * 2. Install: npm install @0xtrails/trails (or pnpm/yarn)
+ * 2. Install: npm install 0xtrails (or pnpm/yarn)
  * 3. Set NEXT_PUBLIC_TRAILS_API_KEY in your environment variables
  */
 
@@ -19,7 +19,7 @@
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { mainnet, base, arbitrum } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TrailsProvider, TrailsHookModal } from '@0xtrails/trails';
+import { TrailsProvider, TrailsHookModal } from '0xtrails';
 import { injected, walletConnect } from 'wagmi/connectors';
 
 const wagmiConfig = createConfig({
@@ -55,7 +55,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 // 2. BASIC SEND TRANSACTION
 // ============================================
 
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 export function SendButton() {
   const { quote, isPending, isSuccess, isError, error } = useQuote({
@@ -80,7 +80,7 @@ export function SendButton() {
 // 3. CHAIN DISCOVERY
 // ============================================
 
-import { useSupportedChains } from '@0xtrails/trails';
+import { useSupportedChains } from '0xtrails';
 
 export function ChainSelector({
   value,
@@ -109,7 +109,7 @@ export function ChainSelector({
 // 4. TOKEN DISCOVERY
 // ============================================
 
-import { useSupportedTokens } from '@0xtrails/trails';
+import { useSupportedTokens } from '0xtrails';
 
 export function TokenSelector({
   chainId,
@@ -257,7 +257,7 @@ const VAULT_ABI = [
 
 // Placeholder for EXACT_INPUT flows
 const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
 
 export function VaultDeposit({
@@ -310,7 +310,7 @@ export function VaultDeposit({
 // 7. INTENT HISTORY
 // ============================================
 
-import { useIntentHistory } from '@0xtrails/trails';
+import { useIntentHistory } from '0xtrails';
 
 export function TransactionHistory() {
   const { address } = useAccount();

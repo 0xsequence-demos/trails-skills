@@ -16,9 +16,9 @@ Trails is cross-chain infrastructure that enables:
 
 ### Prerequisites
 
-- **React/Next.js integrations**: React 19.1+ (recommended for best compatibility)
-  - React 18+ is supported but React 19.1+ works best with Trails
-- **Direct API**: Node.js 18+ or any runtime with fetch support
+- **React/Next.js integrations**: SDK package `0xtrails` (`0.16.x`), React 18 or 19 (peer dependency `^18 || ^19`), `viem ^2.41`, `@tanstack/react-query ^5.90`
+- **Direct API**: Node.js 18+ or any runtime with fetch support; client package `@0xtrails/api`
+- **Intent protocol**: v1.5 (HydrateProxy executor) is current; v1 is legacy
 
 ### 1. Get Your API Key
 
@@ -39,10 +39,10 @@ TRAILS_API_KEY=your_api_key
 
 ```bash
 # Widget or Headless SDK
-pnpm add @0xtrails/trails
+pnpm add 0xtrails
 
 # Direct API
-pnpm add @0xtrails/trails-api
+pnpm add @0xtrails/api
 ```
 
 ---
@@ -77,7 +77,7 @@ pnpm add @0xtrails/trails-api
 Drop-in React component with pre-built UI. Supports theming via CSS variables.
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 <TrailsWidget
   mode="swap"
@@ -91,7 +91,7 @@ import { TrailsWidget } from '@0xtrails/trails';
 Programmatic control with your own UI. Requires `TrailsProvider` and `TrailsHookModal`.
 
 ```tsx
-import { useQuote } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 const { quote, isPending, isSuccess } = useQuote({ ...params });
 // Executes automatically when quote is ready
@@ -102,7 +102,7 @@ const { quote, isPending, isSuccess } = useQuote({ ...params });
 Server-side or non-React. Full control over the intent lifecycle.
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: '...' });
 const quote = await trails.quoteIntent({ ... });
@@ -132,7 +132,7 @@ import {
   useSupportedChains,
   useSupportedTokens,
   useTokenList,
-} from '@0xtrails/trails';
+} from '0xtrails';
 
 const { data: chains } = useSupportedChains();
 const { data: tokens } = useSupportedTokens({ chainId: 8453 });
@@ -145,7 +145,7 @@ import {
   getSupportedChains,
   getSupportedTokens,
   getChainInfo,
-} from '@0xtrails/trails';
+} from '0xtrails';
 
 const chains = await getSupportedChains();
 const tokens = await getSupportedTokens({ chainId: 8453 });

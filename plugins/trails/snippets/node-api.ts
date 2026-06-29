@@ -6,11 +6,11 @@
  *
  * SETUP:
  * 1. Get your API key from https://dashboard.trails.build
- * 2. Install: npm install @0xtrails/trails-api (or pnpm/yarn)
+ * 2. Install: npm install @0xtrails/api (or pnpm/yarn)
  * 3. Set TRAILS_API_KEY in your environment variables
  */
 
-import { TrailsAPI, TrailsError } from '@0xtrails/trails-api';
+import { TrailsAPI, TrailsError } from '@0xtrails/api';
 
 // ============================================
 // 1. INITIALIZE CLIENT
@@ -236,7 +236,7 @@ const VAULT_ABI = [
 ] as const;
 
 const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
 
 async function quoteVaultDeposit(vaultAddress: string, userAddress: string) {
