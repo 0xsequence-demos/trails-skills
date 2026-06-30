@@ -2,7 +2,7 @@
 
 Ready-to-use examples for the Trails Widget component.
 
-> **Note**: React 19.1+ is recommended for best compatibility with Trails. React 18+ is supported but may have compatibility issues.
+> **Note**: The SDK (`0xtrails`) supports React 18 or 19 (peer dependency `^18.0.0 || ^19.0.0`).
 
 ## Basic Setup
 
@@ -17,11 +17,11 @@ NEXT_PUBLIC_TRAILS_API_KEY=your_api_key
 ### 2. Install
 
 ```bash
-pnpm add @0xtrails/trails
+pnpm add 0xtrails
 # or
-npm install @0xtrails/trails
+npm install 0xtrails
 # or
-yarn add @0xtrails/trails
+yarn add 0xtrails
 ```
 
 ### 3. Provider Wiring
@@ -34,7 +34,7 @@ Wrap your app with both `WagmiProvider` and `TrailsProvider`:
 
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TrailsProvider } from '@0xtrails/trails';
+import { TrailsProvider } from '0xtrails';
 import { wagmiConfig } from './wagmi-config';
 
 const queryClient = new QueryClient();
@@ -59,7 +59,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 Use for payments where the recipient needs an exact amount.
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 function CheckoutPage() {
   return (
@@ -100,7 +100,7 @@ function CheckoutPage() {
 Use for token exchanges.
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 function SwapPage() {
   return (
@@ -133,7 +133,7 @@ function SwapPage() {
 Use for deposits where the user picks their input amount.
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 function DepositPage() {
   return (
@@ -152,7 +152,7 @@ function DepositPage() {
 Execute a contract function after bridging:
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 import { encodeFunctionData } from 'viem';
 
 const vaultAbi = [{
@@ -166,7 +166,7 @@ const vaultAbi = [{
 }] as const;
 
 // Placeholder for dynamic amount (Trails fills this)
-const PLACEHOLDER = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+const PLACEHOLDER = '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53';
 
 const calldata = encodeFunctionData({
   abi: vaultAbi,
@@ -194,7 +194,7 @@ function VaultDepositPage() {
 Use for DeFi protocol deposits.
 
 ```tsx
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 
 function EarnPage() {
   return (
@@ -274,7 +274,7 @@ Or in your global CSS:
 'use client';
 
 import { useState } from 'react';
-import { TrailsWidget } from '@0xtrails/trails';
+import { TrailsWidget } from '0xtrails';
 import { useAccount } from 'wagmi';
 
 interface Product {

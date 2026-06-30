@@ -5,13 +5,25 @@ React UI), use the Direct API. Trails builds the transactions; you sign them wit
 wallet. Trails is wallet-agnostic and never holds keys, so this composes with any external
 signer (a server signer, wagmi, or any agent wallet).
 
-The key idea: a vault accepts one specific token, but the user can deposit with **any**
-token on **any** chain. Trails swaps and bridges into the vault's token and runs the
-deposit, and the user signs a single transaction. That swap-and-deposit path is the
-default (section 2). Calling the yield enter endpoint directly is only a shortcut for when
-the user already holds the vault's token (section 3).
+A vault accepts one specific token, but the user can deposit with **any** token on **any**
+chain — Trails swaps and bridges into the vault's token and runs the deposit. There are two
+ways to express that:
 
-Prefer this over the Earn widget whenever the caller is not a React app.
+- **Two-step (recommended for the raw API):** a `QuoteIntent` swap into the vault's token,
+  then `YieldCreateEnterAction` to deposit. Pure API, no SDK, no hand-built calldata.
+  Costs a few extra signatures but is robust and easy to reason about. See section 4.
+- **Single transaction (intent protocol v1.5):** one `QuoteIntent` whose `destinationCallData`
+  is a *hydrate-multicall* that swaps and deposits atomically. The multicall is normally
+  built by the `0xtrails` SDK, not by hand. See section 5.
+
+Prefer the Earn widget only when the caller is a React app.
+
+> **Intent protocol v1.5.** Trails moved from the old `TrailsRouter` model to a
+> `HydrateProxy` executor. The single-transaction swap-and-deposit (section 5) routes
+> through an **executor contract** and marks the post-swap amount with a **hydration
+> sentinel** that the executor fills in at runtime. The older pattern — pointing
+> `destinationToAddress` straight at the vault with a bare `supply(...)` and a placeholder —
+> is deprecated and will revert against the v1.5 API. Do not use it.
 
 ## Setup
 
@@ -20,7 +32,7 @@ Prefer this over the Earn widget whenever the caller is not a React app.
 - Get a key: https://dashboard.trails.build
 - Endpoints are RPC-style: `POST /rpc/Trails/{Method}` with a JSON body.
 
-The recipes below use raw `fetch` so they port to any language. The `@0xtrails/trails-api`
+The recipes below use raw `fetch` so they port to any language. The `@0xtrails/api`
 SDK wraps the same calls if you are in TypeScript.
 
 ```ts
@@ -48,12 +60,35 @@ function toTx(unsignedTransaction: string) {
 }
 ```
 
+## The hydration sentinel (read this before building calldata)
+
+When a deposit call's amount depends on the post-swap balance, you cannot know the exact
+number ahead of time. Trails solves this with a **hydration sentinel**: a fixed 32-byte
+value you place in the amount slot, which the executor replaces with the wallet's actual
+runtime balance at execution.
+
+```ts
+// keccak256("sequence.trails.hydrate.amount.sentinel.v1"). Exported by the SDK as
+// TRAILS_ROUTER_PLACEHOLDER_AMOUNT / TRAILS_HYDRATE_PLACEHOLDER_AMOUNT — import it, don't retype it.
+const TRAILS_HYDRATE_PLACEHOLDER_AMOUNT =
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
+
+// uint160(keccak256("sequence.trails.hydrate.address.sentinel.v1")). Marks an address slot
+// (e.g. a swap `recipient`) that should become the intent wallet at runtime.
+const TRAILS_HYDRATE_SELF_ADDRESS = '0xd80d3a37a85094663c36c062e5ef689f2bf54fca'
+```
+
+> **Do not use `0xffff…ff` (uint256 max) as the placeholder.** It is *not* the sentinel —
+> the executor treats it as a literal amount, the deposit tries to pull a near-infinite
+> balance, the destination call reverts, and the intent ends `REFUNDED`. This is the single
+> most common cause of a failed swap-and-deposit. See Troubleshooting.
+
 ## 1. Discover markets — `YieldGetMarkets`
 
 ```ts
 const { items } = await rpc('YieldGetMarkets', {
   chainId: '137',      // string. Polygon 137, Katana 747474, etc. Omit for all chains.
-  type: 'vault',       // optional: 'vault' | 'lending'
+  type: 'lending',     // optional: 'vault' | 'lending'
   search: 'USDC',      // optional free-text over names and tokens
   sort: 'rewardRateDesc',
   limit: 100,          // max 100. Use offset to page.
@@ -65,136 +100,64 @@ Each market in `items`:
 
 ```jsonc
 {
-  "id": "polygon-wbtc-aave-v3-lending",                // earnMarketId
+  "id": "polygon-usdt-aave-v3-lending",                // earnMarketId
   "chainId": "137", "network": "polygon",
-  "rewardRate": { "total": 0.0425, "rateType": "APY" },
-  "statistics": { "tvlUsd": "93761.07" },              // string or null
+  "rewardRate": { "total": 0.0302, "rateType": "APY" },
+  "statistics": { "tvlUsd": "30684196" },              // string or null
   "status": { "enter": true, "exit": true },           // check before acting
-  "token": { "symbol": "wBTC", "address": "0x1BFD...", "decimals": 8 }, // the vault's input token
-  "inputTokens": [ { "symbol": "wBTC", "address": "0x1BFD..." } ],
-  "metadata": { "name": "Aave V3 wBTC", "supportedStandards": ["ERC4626"] }
+  "token": { "symbol": "USDT", "address": "0xc213...", "decimals": 6 }, // the vault's token
+  "inputTokens": [ { "symbol": "USDT", "address": "0xc213..." } ],
+  "metadata": { "name": "Aave v3 USDT Lending", "supportedStandards": ["ERC4626"] }
 }
 ```
 
 Notes:
 - `limit` caps at 100. Requesting more returns an endpoint error. Page with `offset`.
 - The `id` prefix is the network slug, so you can derive the chain without a second call.
-- `market.token` (and `inputTokens`) is the token the vault takes. The user rarely holds
-  exactly this, which is why section 2 is the default.
+- `status.enter`/`status.exit` reflect Trails' view. It is still worth sanity-checking the
+  underlying reserve is open (not frozen/paused, supply cap not reached) before depositing —
+  a market can be listed as enterable while the on-chain `supply` reverts.
+- `market.token` is the token the vault takes. The user rarely holds exactly this, which is
+  why sections 4 and 5 exist.
+- `GetEarnPools` is a higher-level, curated view of the same data (the React Earn widget uses
+  it); it returns a `depositAddress` per pool. For the raw API, `YieldGetMarkets` plus
+  `YieldCreateEnterAction` is the lower-level, fully composable path.
 
-## 2. Deposit with any input token (recommended)
+## 2. Deposit when the user already holds the vault token — `YieldCreateEnterAction`
 
-This is the default deposit path. The vault takes `market.token` (e.g. wBTC), but the user
-usually holds something else (USDC, ETH). Trails swaps, and bridges if needed, the user's
-token into the vault's token and executes the deposit in a **single signed transaction**,
-using `QuoteIntent` with `destinationCallData`.
-
-Do not use `YieldCreateEnterAction` for this case. That endpoint assumes the user already
-holds the vault's token and builds a plain approve + supply on it. From a wallet holding a
-different token, the supply reverts on `transferFrom`. Use the enter action only for the
-shortcut in section 3.
-
-**Steps**
-
-1. Read the market's input token and deposit target.
-   - `destinationTokenAddress` = `market.token.address` (the token the vault takes).
-   - The deposit target contract (pool or vault) and the exact deposit function: call
-     `YieldCreateEnterAction` once with any small amount and read its `SUPPLY` step. That
-     transaction's `to` is the deposit target, and its `data` is the deposit call. (Or
-     encode the call yourself per protocol.)
-2. Build the deposit calldata with the amount set to `TRAILS_ROUTER_PLACEHOLDER_AMOUNT`
-   (the uint256 sentinel `0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`).
-   Trails substitutes the actual post-swap amount at execution. Common shapes:
-   - ERC-4626 vault: `deposit(uint256 assets, address receiver)` — placeholder in `assets`,
-     `receiver` = the user.
-   - Aave V3: `supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)`
-     — placeholder in `amount`, `onBehalfOf` = the user.
-   See `CALLDATA_GUIDE.md` for encoding.
-3. Quote, commit, sign one transaction, execute, wait:
-
-```ts
-const { intent } = await rpc('QuoteIntent', {
-  ownerAddress: owner,
-  originChainId: 137,                          // chain the user funds from (any supported chain)
-  originTokenAddress: USDC_POLYGON,            // what the user holds
-  originTokenAmount: '1000000',                // 1 USDC (6 dp), wei
-  destinationChainId: 137,                     // the market's chain
-  destinationTokenAddress: vaultToken,         // market.token.address (e.g. wBTC)
-  destinationToAddress: depositTarget,         // the pool/vault to call
-  destinationApproveAddress: depositTarget,    // Trails approves vaultToken to it before the call
-  destinationCallData: depositCallWithPlaceholder, // deposit(...PLACEHOLDER...)
-  tradeType: 'EXACT_INPUT',
-})
-
-const { intentId } = await rpc('CommitIntent', { intent })
-const depositTxHash = await signAndSend(toTx(JSON.stringify(intent.depositTransaction)))
-await rpc('ExecuteIntent', { intentId, depositTransactionHash: depositTxHash })
-let receipt
-do { receipt = await rpc('WaitIntentReceipt', { intentId }) } while (!receipt.done)
-if (receipt.intentReceipt.status !== 'SUCCEEDED') throw new Error('failed; origin deposit is refunded')
-```
-
-The user signs exactly one transaction (the origin deposit). Trails handles the swap, any
-bridge, the approval of the vault token, and the deposit call.
-
-Cross-chain is the same call: set `originChainId` to the source chain and Trails bridges as
-part of the route. Quotes expire in about five minutes; re-quote if commit or execute fails
-on expiry.
-
-**Worked example, USDC into the wBTC Aave market on Polygon (verified live)**
-
-```jsonc
-POST /rpc/Trails/QuoteIntent
-{
-  "ownerAddress": "0xYourWallet",
-  "originChainId": 137,
-  "originTokenAddress": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",     // USDC you hold
-  "originTokenAmount": 1000000,                                            // 1 USDC
-  "destinationChainId": 137,
-  "destinationTokenAddress": "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6", // wBTC (market.token)
-  "destinationToAddress":     "0x794a61358D6845594F94dc1DB02A252b5b4814aD", // Aave V3 Pool (SUPPLY.to)
-  "destinationApproveAddress":"0x794a61358D6845594F94dc1DB02A252b5b4814aD",
-  "destinationCallData": "0x617ba037<wBTC><PLACEHOLDER><onBehalfOf=you><referralCode=0>",
-  "tradeType": "EXACT_INPUT"
-}
-```
-
-Trails swaps the USDC to wBTC and calls `Pool.supply(wBTC, <swapped amount>, you, 0)`. You
-signed one USDC transaction.
-
-## 3. Deposit when the user already holds the vault token (shortcut)
-
-If the user already holds the vault's input token on the vault's chain, skip the swap and
-call `YieldCreateEnterAction` directly.
+This is the simplest, most reliable path. If the user already holds the vault's token on the
+vault's chain, no swap is needed.
 
 ```ts
 const { action } = await rpc('YieldCreateEnterAction', {
   earnMarketId: market.id,
-  userWalletAddress: owner,         // the signer's address
+  userWalletAddress: owner,         // the signer's address (becomes onBehalfOf)
   args: { amount: '10' },           // human units of the vault's token. Not wei.
   // optional: receiverAddress, useMaxAllowance (approve uint256.max instead of exact)
 })
 ```
 
-`action.transactions` is an ordered list. Each item has a `type` (`APPROVAL`, `SUPPLY`,
-...), a `stepIndex`, and `unsignedTransaction` as a JSON **string**:
+`action.transactions` is an ordered list. Each item has a `type` (`APPROVAL`, `SUPPLY`, ...),
+a `stepIndex`, and `unsignedTransaction` as a JSON **string**:
 
 ```jsonc
 { "action": { "transactions": [
   { "type": "APPROVAL", "stepIndex": 0,
     "unsignedTransaction": "{\"to\":\"0x<token>\",\"data\":\"0x095ea7b3...\",\"chainId\":137}" },
   { "type": "SUPPLY", "stepIndex": 1,
-    "unsignedTransaction": "{\"to\":\"0x<vault>\",\"data\":\"0x6e553f65...\",\"chainId\":137}" }
+    "unsignedTransaction": "{\"to\":\"0x<pool>\",\"data\":\"0x617ba037...\",\"chainId\":137}" }
 ], "executionPattern": "synchronous" } }
 ```
 
-Sign each with `toTx` in `stepIndex` order (approve, then supply). There is no batch
-endpoint, so sign sequentially and wait for each to land. This endpoint is also the way to
-read a protocol's exact deposit call when building the section 2 calldata.
+Sign each with `toTx` in `stepIndex` order (approve, then supply), waiting for each to land.
+There is no batch endpoint.
 
-## 4. Withdraw — `YieldCreateExitAction`
+This endpoint is also how you read a protocol's exact deposit call: the `SUPPLY` step's `to`
+is the deposit target (e.g. the Aave V3 Pool) and its `data` is the encoded deposit call.
 
-Same response shape as the enter shortcut. The `args` object requires exactly one of:
+## 3. Withdraw — `YieldCreateExitAction`
+
+Same response shape as the enter action. The `args` object requires exactly one of:
 
 ```ts
 await rpc('YieldCreateExitAction', { earnMarketId: market.id, userWalletAddress: owner,
@@ -204,24 +167,130 @@ await rpc('YieldCreateExitAction', { earnMarketId: market.id, userWalletAddress:
 ```
 
 Notes:
-- Passing none returns `MissingArgumentsError` listing `amount`, `shareAmount`,
-  `useMaxAmount`.
+- Passing none returns `MissingArgumentsError` listing `amount`, `shareAmount`, `useMaxAmount`.
 - Exit validates against the live on-chain position. Requesting more than you hold returns
-  `412 MaximumAmountExceededError`. There is no positions endpoint, so use
-  `useMaxAmount: true` to exit fully rather than trying to read a balance first.
+  `412 MaximumAmountExceededError`. There is no positions endpoint, so use `useMaxAmount: true`
+  to exit fully rather than trying to read a balance first.
 - To withdraw to a different token or chain, withdraw to the user's wallet, then run a
   `QuoteIntent` swap or bridge on the proceeds.
 
+## 4. Deposit with any input token, two-step (recommended for the raw API)
+
+When the user holds a different token than the vault, the most robust API-only path is two
+steps: swap into the vault's token, then deposit it. No SDK and no hand-built multicall.
+
+```ts
+// Step 1 — swap origin token into the vault's token, delivered to the user's own wallet.
+// A plain QuoteIntent with no destinationCallData. (This is the same shape used to bridge.)
+const { intent } = await rpc('QuoteIntent', {
+  ownerAddress: owner,
+  originChainId: 137,                          // chain the user funds from (any supported chain)
+  originTokenAddress: USDC_POLYGON,            // what the user holds
+  originTokenAmount: '150000',                 // 0.15 USDC (6 dp), wei
+  destinationChainId: market.chainId,          // the vault's chain
+  destinationTokenAddress: vaultToken,         // market.token.address (e.g. USDT)
+  destinationToAddress: owner,                 // deliver to the user — no destination call
+  tradeType: 'EXACT_INPUT',
+})
+const { intentId } = await rpc('CommitIntent', { intent })
+const swapHash = await signAndSend(toTx(JSON.stringify(intent.depositTransaction)))
+await rpc('ExecuteIntent', { intentId, depositTransactionHash: swapHash })
+let receipt
+do { receipt = await rpc('WaitIntentReceipt', { intentId }) } while (!receipt.done)
+if (receipt.intentReceipt.status !== 'SUCCEEDED') throw new Error('swap failed; origin deposit refunded')
+
+// How much of the vault token landed (smallest units). Convert to human units for the enter action.
+const received = receipt.intentReceipt.summary.destinationTokenAmount
+const human = (Number(received) / 10 ** market.tokenDecimals).toString()
+
+// Step 2 — now the user holds the vault token, so deposit it (section 2).
+const { action } = await rpc('YieldCreateEnterAction', {
+  earnMarketId: market.id, userWalletAddress: owner, args: { amount: human },
+})
+// sign action.transactions in stepIndex order (approve, then supply)
+```
+
+Cross-chain is the same call: set `originChainId` to the source chain and Trails bridges as
+part of the swap. Quotes expire in ~5 minutes; re-quote if commit/execute fails on expiry.
+
+## 5. Deposit with any input token, single transaction (intent protocol v1.5)
+
+For a one-signature deposit, build a `QuoteIntent` whose `destinationCallData` is a v1.5
+**hydrate-multicall**: it swaps the origin token into the vault token and runs the deposit
+in one atomic destination call, with amounts hydrated at runtime. The shape that matters:
+
+- `destinationToAddress` is the **Trails v1.5 executor**, not the vault. (Observed on
+  Polygon: `0x000000004f702C8398e158108937814d074cD74b`.)
+- `destinationTokenAddress` is the token the user **holds** (the origin token), because the
+  swap happens *inside* the multicall, not at the route level.
+- `tradeType: 'EXACT_OUTPUT'`, `fundMethod: 'WALLET'`, `options: { intentProtocol: 'v1.5' }`.
+- `destinationCallData` packs `[approve input→DEX, swap input→vaultToken, approve vaultToken→pool,
+  supply(vaultToken, <hydrated amount>, owner, …)]` with the **hydration sentinels** in the
+  amount/recipient slots.
+
+**Build the multicall with the SDK, not by hand.** `0xtrails` exposes the encoders
+(`encodeMulticallHydrateExecute` and friends) that assemble this calldata and place the
+sentinels correctly; hand-encoding the packed sub-call format is error-prone. The `supply`
+sub-call's `onBehalfOf` **must be the depositor's address**, or the position is credited to
+the wrong account.
+
+```jsonc
+// Verified live on Polygon: 0.15 USDC -> swap to USDT -> supply to the Aave v3 USDT vault,
+// in one signed USDC transaction. (destinationCallData abbreviated.)
+POST /rpc/Trails/QuoteIntent
+{
+  "ownerAddress": "0xYourWallet",
+  "originChainId": 137,
+  "originTokenAddress": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",   // USDC you hold
+  "originTokenAmount": "150000",                                         // 0.15 USDC
+  "destinationChainId": 137,
+  "destinationToAddress": "0x000000004f702C8398e158108937814d074cD74b", // Trails v1.5 executor
+  "destinationTokenAddress": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", // == origin token
+  "destinationTokenAmount": "150000",
+  "destinationCallData": "0x80df36a0…",   // SDK-built hydrate-multicall: swap USDC->USDT, supply to Aave
+  "destinationCallValue": "0",
+  "onlyNativeGasFee": false,
+  "options": { "intentProtocol": "v1.5" },
+  "tradeType": "EXACT_OUTPUT",
+  "fundMethod": "WALLET"
+}
+```
+
+Then commit, sign the single origin transaction, execute, and wait — same as section 4. The
+user signs exactly one transaction (the origin deposit); Trails does the swap, approvals, and
+the supply inside the executor.
+
 ## Signing model
 
-Every endpoint above returns an unsigned transaction. You provide the signer (a server
-signer with viem or ethers, a wagmi connection, or any agent wallet). Parse the
-`unsignedTransaction` with `toTx`, let your signer set nonce and gas, and broadcast.
-Because Trails never signs, it composes with any wallet: Trails plans, your wallet signs.
+Every endpoint above returns an unsigned transaction. You provide the signer (a server signer
+with viem or ethers, a wagmi connection, or any agent wallet). Parse the `unsignedTransaction`
+with `toTx`, let your signer set nonce and gas, and broadcast. Because Trails never signs, it
+composes with any wallet: Trails plans, your wallet signs.
+
+## Troubleshooting
+
+- **Intent ends `REFUNDED` with `destinationTransaction.status: REVERTED` and
+  `statusReason: "call reverted: refund triggered on destination"`.** The destination call
+  reverted, so Trails refunded the origin deposit (you get the origin or swapped token back in
+  your wallet — funds are not lost). Most common causes, in order:
+  1. **Wrong placeholder.** You used `0xffff…ff` (uint256 max) instead of the hydration
+     sentinel `0xfcbc96b9…`. The supply tried to pull a near-infinite amount and reverted.
+     Use the sentinel (or the SDK), or fall back to the two-step path (section 4).
+  2. **Deprecated single-tx shape.** You pointed `destinationToAddress` at the vault with a
+     bare `supply(...)` placeholder (the pre-v1.5 `TrailsRouter` pattern). Use the v1.5
+     executor multicall (section 5) or the two-step path (section 4).
+  3. **Reserve not actually open.** The vault is listed as enterable but the underlying
+     reserve is frozen/paused or its supply cap is full, so `supply` reverts. Pick another
+     market.
+- **Quote expired.** Quotes live ~5 minutes. Re-quote and review the new numbers before
+  committing.
+- **`mm`/signer rejects `value`.** Normalize the `unsignedTransaction.value` to a 0x-prefixed
+  hex quantity (`toTx` above does this); `"0"` is not accepted by some signers.
 
 ## Chains used in examples
 
 Polygon `137`, Katana `747474`, Arbitrum `42161`. USDC addresses:
 Arbitrum `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`,
 Polygon `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`.
+USDT Polygon `0xc2132D05D31c914a87C6611C10748AEb04B58e8F`.
 Call `YieldGetMarkets` for the authoritative per-chain token list.

@@ -6,11 +6,11 @@
  *
  * SETUP:
  * 1. Get your API key from https://dashboard.trails.build
- * 2. Install: npm install @0xtrails/trails-api (or pnpm/yarn)
+ * 2. Install: npm install @0xtrails/api (or pnpm/yarn)
  * 3. Set TRAILS_API_KEY in your environment variables
  */
 
-import { TrailsAPI, TrailsError } from '@0xtrails/trails-api';
+import { TrailsAPI, TrailsError } from '@0xtrails/api';
 
 // ============================================
 // 1. INITIALIZE CLIENT
@@ -73,7 +73,152 @@ async function executeIntent() {
 }
 
 // ============================================
-// 3. QUOTE WITH CALLDATA (Contract Execution)
+// 3. RAW FETCH API (For AI Agents & Universal Clients)
+// Use when you don't want npm dependencies or need direct HTTP access
+// ============================================
+
+const TRAILS_API_URL = 'https://api.trails.build';
+const fetchHeaders = {
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${process.env.TRAILS_API_KEY}`,
+};
+
+// Quote via fetch
+async function fetchQuote(params: {
+  sourceChainId: number;
+  sourceTokenAddress: string;
+  destinationChainId: number;
+  destinationTokenAddress: string;
+  amount: string;
+  tradeType: 'EXACT_INPUT' | 'EXACT_OUTPUT';
+  userAddress: string;
+}) {
+  const response = await fetch(`${TRAILS_API_URL}/quote`, {
+    method: 'POST',
+    headers: fetchHeaders,
+    body: JSON.stringify(params),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Quote failed: ${error.message || response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// Commit via fetch
+async function fetchCommitIntent(quoteId: string) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/commit`, {
+    method: 'POST',
+    headers: fetchHeaders,
+    body: JSON.stringify({ quoteId }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Commit failed: ${error.message || response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// Execute via fetch
+async function fetchExecuteIntent(intentId: string, signature: string) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/execute`, {
+    method: 'POST',
+    headers: fetchHeaders,
+    body: JSON.stringify({ intentId, signature }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Execute failed: ${error.message || response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// Get status via fetch
+async function fetchIntentStatus(intentId: string) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/${intentId}`, {
+    method: 'GET',
+    headers: fetchHeaders,
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Status check failed: ${error.message || response.statusText}`);
+  }
+  
+  return response.json();
+}
+
+// Wait for completion helper
+async function waitForIntentCompletion(intentId: string, timeoutMs = 120000) {
+  const startTime = Date.now();
+  const pollInterval = 3000;
+  
+  while (Date.now() - startTime < timeoutMs) {
+    const status = await fetchIntentStatus(intentId);
+    
+    if (status.status === 'COMPLETED') {
+      return status;
+    }
+    
+    if (status.status === 'FAILED') {
+      throw new Error(`Intent failed: ${status.error || 'Unknown error'}`);
+    }
+    
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  throw new Error('Intent timed out');
+}
+
+// Complete raw fetch example
+async function executeIntentWithFetch() {
+  try {
+    // 1. Get quote
+    console.log('Getting quote...');
+    const quote = await fetchQuote({
+      sourceChainId: 1,
+      sourceTokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      destinationChainId: 8453,
+      destinationTokenAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      amount: '1000000000',
+      tradeType: 'EXACT_INPUT',
+      userAddress: '0xYourAddress',
+    });
+    console.log('Quote received:', quote.quoteId);
+
+    // 2. Commit intent
+    console.log('Committing intent...');
+    const intent = await fetchCommitIntent(quote.quoteId);
+    console.log('Intent created:', intent.intentId);
+
+    // 3. Execute (requires user signature)
+    console.log('Executing intent...');
+    const userSignature = '0x...'; // Implement your signing logic
+    const execution = await fetchExecuteIntent(intent.intentId, userSignature);
+    console.log('Execution started:', execution.transactionHash);
+
+    // 4. Wait for completion
+    console.log('Waiting for completion...');
+    const result = await waitForIntentCompletion(intent.intentId);
+    console.log('Transfer complete!');
+    console.log('Destination tx:', result.destinationTransactionHash);
+
+    return result;
+  } catch (error) {
+    console.error('Transfer failed:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// 4. QUOTE WITH CALLDATA (Contract Execution)
 // ============================================
 
 import { encodeFunctionData } from 'viem';
@@ -91,7 +236,7 @@ const VAULT_ABI = [
 ] as const;
 
 const PLACEHOLDER_AMOUNT = BigInt(
-  '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+  '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 );
 
 async function quoteVaultDeposit(vaultAddress: string, userAddress: string) {

@@ -1,5 +1,7 @@
 {
   "name": "trails",
+  "slug": "trails",
+  "displayName": "Trails",
   "version": "1.0.0",
   "description": "Integrate Trails cross-chain infrastructure — Widget, Headless SDK, or Direct API",
   "owner": {
@@ -21,6 +23,8 @@
   "skills": [
     {
       "name": "trails",
+      "slug": "trails",
+      "displayName": "Trails",
       "path": "SKILL.md",
       "description": "Complete Trails integration assistant"
     }

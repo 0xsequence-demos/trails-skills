@@ -55,7 +55,7 @@ Help developers integrate Trails using the most appropriate method:
 2. **Headless SDK** — React hooks with custom UX
 3. **Direct API** — Server-side / non-React / automation
 
-**Important**: For React/Next.js integrations, recommend **React 19.1+** for best compatibility with Trails. React 18+ is supported but React 19.1+ works best.
+**Important**: The SDK package is **`0xtrails`** (current major: `0.16.x`); the Direct-API client is **`@0xtrails/api`**. For React/Next.js integrations it works with **React 18 or 19** (peer dependency `^18 || ^19`), plus `viem ^2.41` and `@tanstack/react-query ^5.90`. The current intent protocol is **v1.5** (HydrateProxy executor).
 
 ## Documentation Resources
 
@@ -80,12 +80,12 @@ If any of these are unclear from context, ask **at most 3 short questions**.
 
 ### Choose Widget when:
 - User wants a "drop-in" UI
-- Building a React/Next.js app (React 19.1+ recommended)
+- Building a React/Next.js app (React 18 or 19)
 - Needs Pay/Swap/Fund/Earn flows quickly
 - Wants theming via CSS variables
 
 ### Choose Headless SDK when:
-- React + wagmi present (React 19.1+ recommended)
+- React + wagmi present (React 18 or 19)
 - Wants programmatic control with custom UX
 - Okay using TrailsProvider and optional modals
 - Needs hooks for token lists, history, chain discovery
@@ -95,7 +95,7 @@ If any of these are unclear from context, ask **at most 3 short questions**.
 - Non-React apps (Node, Python, Go, etc.)
 - Batch automation or backend services
 - Wants explicit control over signing/execution pipeline
-- **Yield (Earn) deposits or withdrawals from an agent, CLI, or backend** — see `YIELD_API_RECIPES.md`. Discover with `YieldGetMarkets`, withdraw with `YieldCreateExitAction`. For deposits, the **default and recommended** path is swap-and-deposit with **any** input token: a `QuoteIntent` with `destinationCallData` so the user signs one transaction and Trails swaps (and bridges if needed) into the vault's token and runs the deposit. Only call `YieldCreateEnterAction` directly when the user already holds the vault's token. The Earn widget is only for React UIs.
+- **Yield (Earn) deposits or withdrawals from an agent, CLI, or backend** — see `YIELD_API_RECIPES.md`. Discover with `YieldGetMarkets`; withdraw with `YieldCreateExitAction`. When the user already holds the vault's token, deposit with `YieldCreateEnterAction` (approve + supply). To deposit a **different** token, the robust raw-API path is two steps: a `QuoteIntent` swap into the vault's token (delivered to the user), then `YieldCreateEnterAction`. For a single signed transaction, build a v1.5 *hydrate-multicall* with the `0xtrails` SDK (`swap()` + `lend`/`deposit({ amount: dynamic() })` → `encodeMulticallHydrateExecute`) and pass it as `destinationCallData` to the Trails v1.5 executor (`0x000000004f702C8398e158108937814d074cD74b`). Do **not** point `destinationToAddress` at the vault with a bare `supply()` and a `0xffff…ff` placeholder — that is the deprecated pre-v1.5 shape and reverts (the real hydration sentinel is `0xfcbc96b9…`). The Earn widget is only for React UIs.
 
 ---
 
@@ -138,7 +138,7 @@ State which integration mode you're recommending and why.
 
 ### Step 4: Generate Code
 Output:
-- Installation commands (always use latest version: `@0xtrails/trails` or `@0xtrails/trails-api` without version pins)
+- Installation commands (always use latest version: `0xtrails` or `@0xtrails/api` without version pins)
 - Provider wiring (if applicable)
 - Integration code snippet
 - Environment variable usage (referencing the key they just set up)
@@ -184,11 +184,11 @@ Use `SearchTrails` for:
 2. **Get API Key**: Visit [https://dashboard.trails.build](https://dashboard.trails.build) to get your API key
 3. **Install**:
    ```bash
-   pnpm add @0xtrails/trails
+   pnpm add 0xtrails
    ```
 4. **Provider setup** (in `_app.tsx` or layout):
    ```tsx
-   import { TrailsProvider } from '@0xtrails/trails';
+   import { TrailsProvider } from '0xtrails';
    import { WagmiProvider } from 'wagmi';
 
    export default function App({ children }) {
@@ -203,7 +203,7 @@ Use `SearchTrails` for:
    ```
 5. **Widget usage**:
    ```tsx
-   import { TrailsWidget } from '@0xtrails/trails';
+   import { TrailsWidget } from '0xtrails';
 
    <TrailsWidget
      mode="pay"
@@ -224,11 +224,11 @@ Use `SearchTrails` for:
 2. **Get API Key**: Visit [https://dashboard.trails.build](https://dashboard.trails.build) to get your API key
 3. **Install**:
    ```bash
-   pnpm add @0xtrails/trails
+   pnpm add 0xtrails
    ```
 4. **Provider + Modal** (required):
    ```tsx
-   import { TrailsProvider, TrailsHookModal } from '@0xtrails/trails';
+   import { TrailsProvider, TrailsHookModal } from '0xtrails';
 
    function App() {
      return (
@@ -243,21 +243,21 @@ Use `SearchTrails` for:
    ```
 5. **Hook usage**:
    ```tsx
-   import { useTrailsSendTransaction, useSupportedTokens } from '@0xtrails/trails';
+   import { useQuote, useSupportedTokens } from '0xtrails';
 
    function SwapPanel() {
      const { data: tokens } = useSupportedTokens();
-     const { sendTransaction, isPending } = useTrailsSendTransaction();
+     const { quote, isPending, isSuccess } = useQuote({
+       destinationChainId: 8453,
+       destinationTokenAddress: '0x...',
+       destinationAmount: '1000000',
+     });
 
-     const handleSwap = () => {
-       sendTransaction({
-         destinationChainId: 8453,
-         destinationTokenAddress: '0x...',
-         destinationAmount: '1000000',
-       });
-     };
-
-     return <button onClick={handleSwap} disabled={isPending}>Swap</button>;
+     return (
+       <button disabled={isPending || isSuccess}>
+         {isPending ? 'Swapping...' : isSuccess ? 'Complete!' : 'Swap'}
+       </button>
+     );
    }
    ```
 
@@ -269,13 +269,12 @@ Use `SearchTrails` for:
 
 1. **Mode**: Direct API — server-side orchestration
 2. **Get API Key**: Visit [https://dashboard.trails.build](https://dashboard.trails.build) to get your API key
-3. **Install**:
-   ```bash
-   pnpm add @0xtrails/trails-api
-   ```
-4. **Full flow**:
+3. **Choose approach**:
+   - **SDK Client** (Node.js): `pnpm add @0xtrails/api`
+   - **Raw Fetch** (AI agents, Python, etc.): No installation, use HTTP endpoints
+4. **SDK Client flow**:
    ```typescript
-   import { TrailsAPI } from '@0xtrails/trails-api';
+   import { TrailsAPI } from '@0xtrails/api';
 
    const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY });
 
@@ -309,6 +308,29 @@ Use `SearchTrails` for:
    }
    ```
 
+**Or Raw Fetch (for AI agents like OpenClaw, Python, etc.):**
+   ```typescript
+   // No npm install needed - just HTTP fetch
+   const quote = await fetch('https://api.trails.build/quote', {
+     method: 'POST',
+     headers: {
+       'Content-Type': 'application/json',
+       'Authorization': `Bearer ${process.env.TRAILS_API_KEY}`
+     },
+     body: JSON.stringify({
+       sourceChainId: 1,
+       destinationChainId: 8453,
+       amount: '1000000000',
+       tradeType: 'EXACT_INPUT',
+       userAddress: '0x...'
+     })
+   });
+   
+   const quoteData = await quote.json();
+   // Then commit, execute, and poll status via fetch
+   // See API_RECIPES.md for complete raw fetch examples
+   ```
+
 ### Example 4: Fund Mode with Calldata (DeFi Deposit)
 
 **User says:** "I want users to deposit into my vault contract after bridging."
@@ -335,7 +357,7 @@ Use `SearchTrails` for:
    ] as const;
 
    // Use placeholder for amount (Trails fills actual value)
-   const PLACEHOLDER_AMOUNT = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+   const PLACEHOLDER_AMOUNT = '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53';
 
    const calldata = encodeFunctionData({
      abi: vaultAbi,
@@ -397,10 +419,10 @@ TRAILS_API_KEY=your_api_key
 ### Token/Chain Discovery
 ```tsx
 // Hooks
-import { useSupportedChains, useSupportedTokens } from '@0xtrails/trails';
+import { useSupportedChains, useSupportedTokens } from '0xtrails';
 
 // Functions
-import { getSupportedChains, getSupportedTokens, getChainInfo } from '@0xtrails/trails';
+import { getSupportedChains, getSupportedTokens, getChainInfo } from '0xtrails';
 ```
 
 ### Trade Types by Mode
@@ -409,7 +431,7 @@ import { getSupportedChains, getSupportedTokens, getChainInfo } from '@0xtrails/
 | Pay  | EXACT_OUTPUT | User pays whatever needed to get exact destination amount |
 | Fund | EXACT_INPUT  | User picks input amount, destination computed |
 | Swap | Both | User chooses direction |
-| Earn | EXACT_INPUT  | Deposit into DeFi protocols with any input token. React: Earn widget. Agent/CLI/backend: Yield API, defaulting to swap-and-deposit via `QuoteIntent` + `destinationCallData` (see `YIELD_API_RECIPES.md`). |
+| Earn | EXACT_INPUT (two-step) or EXACT_OUTPUT (v1.5 single-tx) | Deposit into DeFi protocols with any input token. React: Earn widget. Agent/CLI/backend: Yield API — `YieldCreateEnterAction` if the user holds the vault token, else swap-first then enter, or a v1.5 hydrate-multicall as `destinationCallData` (see `YIELD_API_RECIPES.md`). |
 
 ---
 

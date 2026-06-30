@@ -25,15 +25,15 @@ TRAILS_API_KEY=your_api_key
 ### 2. Install
 
 ```bash
-pnpm add @0xtrails/trails-api
+pnpm add @0xtrails/api
 # or
-npm install @0xtrails/trails-api
+npm install @0xtrails/api
 ```
 
 ### 3. Initialize Client
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({
   apiKey: process.env.TRAILS_API_KEY!,
@@ -44,10 +44,250 @@ const trails = new TrailsAPI({
 
 ---
 
-## Core Flow: Quote → Commit → Execute → Wait
+## Raw HTTP/Fetch API (For AI Agents & Universal Clients)
+
+**Use this approach when:**
+- Integrating with AI agents (OpenClaw, AutoGPT, etc.)
+- Working without npm/Node.js
+- Building in languages other than JavaScript/TypeScript
+- Need direct HTTP access
+
+### Base Configuration
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+const TRAILS_API_URL = 'https://api.trails.build';
+const API_KEY = process.env.TRAILS_API_KEY!;
+
+const headers = {
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${API_KEY}`,
+};
+```
+
+### 1. Quote Intent (GET Price & Route)
+
+```typescript
+async function quoteIntent(params) {
+  const response = await fetch(`${TRAILS_API_URL}/quote`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      sourceChainId: 1,                    // Ethereum
+      sourceTokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      destinationChainId: 8453,            // Base
+      destinationTokenAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
+      amount: '1000000000',                // 1000 USDC (6 decimals)
+      tradeType: 'EXACT_INPUT',
+      userAddress: '0xUserWalletAddress',
+      ...params,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Quote failed: ${error.message}`);
+  }
+
+  return await response.json();
+  // Returns: { quoteId, estimatedOutput, route, expiresAt, ... }
+}
+```
+
+### 2. Commit Intent (Lock Quote)
+
+```typescript
+async function commitIntent(quoteId) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/commit`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ quoteId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Commit failed: ${error.message}`);
+  }
+
+  return await response.json();
+  // Returns: { intentId, status, sourceTransaction, ... }
+}
+```
+
+### 3. Execute Intent (Trigger Execution)
+
+```typescript
+async function executeIntent(intentId, signature) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/execute`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      intentId,
+      signature, // User's wallet signature
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Execute failed: ${error.message}`);
+  }
+
+  return await response.json();
+  // Returns: { transactionHash, status, ... }
+}
+```
+
+### 4. Get Intent Status (Poll for Completion)
+
+```typescript
+async function getIntentStatus(intentId) {
+  const response = await fetch(`${TRAILS_API_URL}/intent/${intentId}`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Status check failed: ${error.message}`);
+  }
+
+  return await response.json();
+  // Returns: { intentId, status, sourceTransactionHash, destinationTransactionHash, ... }
+}
+```
+
+### 5. Wait for Completion (Polling Helper)
+
+```typescript
+async function waitForIntentCompletion(intentId, timeoutMs = 120000) {
+  const startTime = Date.now();
+  const pollInterval = 3000; // 3 seconds
+
+  while (Date.now() - startTime < timeoutMs) {
+    const status = await getIntentStatus(intentId);
+    
+    if (status.status === 'COMPLETED') {
+      return status;
+    }
+    
+    if (status.status === 'FAILED') {
+      throw new Error(`Intent failed: ${status.error || 'Unknown error'}`);
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('Intent timed out');
+}
+```
+
+### Complete Raw Fetch Example
+
+```typescript
+async function executeCrossChainTransfer() {
+  try {
+    // 1. Get quote
+    console.log('Getting quote...');
+    const quote = await quoteIntent({
+      sourceChainId: 1,
+      sourceTokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      destinationChainId: 8453,
+      destinationTokenAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      amount: '1000000000',
+      tradeType: 'EXACT_INPUT',
+      userAddress: '0xYourAddress',
+    });
+    console.log('Quote received:', quote.quoteId);
+
+    // 2. Commit intent
+    console.log('Committing intent...');
+    const intent = await commitIntent(quote.quoteId);
+    console.log('Intent created:', intent.intentId);
+
+    // 3. Execute (requires user signature)
+    console.log('Executing intent...');
+    const userSignature = await getUserSignature(intent); // Your signing logic
+    const execution = await executeIntent(intent.intentId, userSignature);
+    console.log('Execution started:', execution.transactionHash);
+
+    // 4. Wait for completion
+    console.log('Waiting for completion...');
+    const result = await waitForIntentCompletion(intent.intentId);
+    console.log('Transfer complete!');
+    console.log('Destination tx:', result.destinationTransactionHash);
+
+    return result;
+  } catch (error) {
+    console.error('Transfer failed:', error);
+    throw error;
+  }
+}
+```
+
+### Python Example (For AI Agents)
+
+```python
+import requests
+import time
+
+TRAILS_API_URL = "https://api.trails.build"
+API_KEY = "your_api_key"
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {API_KEY}"
+}
+
+def quote_intent(params):
+    response = requests.post(f"{TRAILS_API_URL}/quote", json=params, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def commit_intent(quote_id):
+    response = requests.post(f"{TRAILS_API_URL}/intent/commit", 
+                            json={"quoteId": quote_id}, headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def get_intent_status(intent_id):
+    response = requests.get(f"{TRAILS_API_URL}/intent/{intent_id}", headers=headers)
+    response.raise_for_status()
+    return response.json()
+
+def wait_for_completion(intent_id, timeout=120):
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        status = get_intent_status(intent_id)
+        if status["status"] == "COMPLETED":
+            return status
+        if status["status"] == "FAILED":
+            raise Exception(f"Intent failed: {status.get('error')}")
+        time.sleep(3)
+    raise Exception("Intent timed out")
+
+# Usage
+quote = quote_intent({
+    "sourceChainId": 1,
+    "destinationChainId": 8453,
+    "amount": "1000000000",
+    "tradeType": "EXACT_INPUT",
+    "userAddress": "0x..."
+})
+intent = commit_intent(quote["quoteId"])
+result = wait_for_completion(intent["intentId"])
+print(f"Complete! Tx: {result['destinationTransactionHash']}")
+```
+
+---
+
+## SDK Client (For Node.js/TypeScript Projects)
+
+If you're building a Node.js/TypeScript application, the SDK client provides a more convenient interface:
+
+### Core Flow: Quote → Commit → Execute → Wait
+
+```typescript
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -222,7 +462,7 @@ const prices = await trails.getTokenPrices({
 ## Error Handling
 
 ```typescript
-import { TrailsAPI, TrailsError } from '@0xtrails/trails-api';
+import { TrailsAPI, TrailsError } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -266,7 +506,7 @@ async function safeExecute() {
 ## Batch Processing Example
 
 ```typescript
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const trails = new TrailsAPI({ apiKey: process.env.TRAILS_API_KEY! });
 
@@ -337,7 +577,7 @@ If you prefer webhooks over polling:
 ```typescript
 // In your webhook handler (e.g., Next.js API route)
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyTrailsWebhook } from '@0xtrails/trails-api';
+import { verifyTrailsWebhook } from '@0xtrails/api';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -372,7 +612,7 @@ export async function POST(request: NextRequest) {
 
 ```typescript
 import express from 'express';
-import { TrailsAPI } from '@0xtrails/trails-api';
+import { TrailsAPI } from '@0xtrails/api';
 
 const app = express();
 app.use(express.json());

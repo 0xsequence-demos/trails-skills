@@ -10,8 +10,11 @@
 
 const BASE = 'https://trails-api.sequence.app'
 
-// Sentinel Trails replaces with the actual post-swap amount inside destinationCallData.
-const TRAILS_ROUTER_PLACEHOLDER_AMOUNT = '0x' + 'f'.repeat(64)
+// Hydration sentinel = keccak256("sequence.trails.hydrate.amount.sentinel.v1"). The v1.5
+// executor swaps it for the wallet's runtime balance. Prefer importing
+// TRAILS_HYDRATE_PLACEHOLDER_AMOUNT from `0xtrails` over hardcoding.
+// NOTE: it is NOT 0xffff...ff — that is uint256 max and makes the destination call revert.
+const TRAILS_HYDRATE_PLACEHOLDER_AMOUNT = '0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53'
 
 async function rpc<T = any>(method: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}/rpc/Trails/${method}`, {
@@ -47,36 +50,46 @@ async function signAndSend(tx: WalletTx): Promise<string> {
 }
 
 /**
- * RECOMMENDED deposit path: deposit with ANY input token. Trails swaps (and bridges if
- * needed) the user's token into the vault's token, then runs `depositCallData`, all from a
- * single signed transaction. Build `depositCallData` with TRAILS_ROUTER_PLACEHOLDER_AMOUNT
- * in the amount slot (e.g. ERC-4626 deposit(assets, receiver) or Aave supply(asset, amount,
- * onBehalfOf, referralCode)); get `target`/`vaultToken` from the market and its enter action.
+ * RECOMMENDED for the raw API: deposit with ANY input token in two steps —
+ *   1) a QuoteIntent swap into the vault's token, delivered to the user's own wallet, then
+ *   2) YieldCreateEnterAction to deposit it.
+ * No hand-built calldata, no placeholder. Robust because each step is a plain, supported call.
+ *
+ * For a SINGLE-signature deposit, build a v1.5 hydrate-multicall with the `0xtrails` SDK
+ * (compose `swap(...)` + `lend/deposit({ amount: dynamic() })`, then `encodeMulticallHydrateExecute`)
+ * and pass it as `destinationCallData` to the Trails v1.5 executor. See YIELD_API_RECIPES.md §5.
+ * Do NOT point destinationToAddress at the vault with a bare supply() + placeholder — that is
+ * the deprecated pre-v1.5 shape and reverts against the current API.
  */
 async function depositAnyToken(opts: {
   owner: string
-  origin: { chainId: number; token: string; amountWei: string } // what the user holds
-  vault: { chainId: number; token: string; target: string; depositCallData: string }
-}): Promise<string> {
+  market: { id: string; chainId: number; token: string; tokenDecimals: number } // the vault
+  origin: { chainId: number; token: string; amountWei: string }                  // what the user holds
+}): Promise<{ swapHash: string; depositHashes: string[] }> {
+  // 1) Swap origin token -> vault token, delivered to the user (no destinationCallData).
+  //    Same shape bridges automatically when origin and market chains differ.
   const { intent } = await rpc('QuoteIntent', {
     ownerAddress: opts.owner,
     originChainId: opts.origin.chainId,
     originTokenAddress: opts.origin.token,
     originTokenAmount: opts.origin.amountWei,
-    destinationChainId: opts.vault.chainId,
-    destinationTokenAddress: opts.vault.token,
-    destinationToAddress: opts.vault.target,
-    destinationApproveAddress: opts.vault.target,
-    destinationCallData: opts.vault.depositCallData,
+    destinationChainId: opts.market.chainId,
+    destinationTokenAddress: opts.market.token,
+    destinationToAddress: opts.owner,
     tradeType: 'EXACT_INPUT',
   })
   const { intentId } = await rpc('CommitIntent', { intent })
-  const hash = await signAndSend(toTx(JSON.stringify(intent.depositTransaction)))
-  await rpc('ExecuteIntent', { intentId, depositTransactionHash: hash })
+  const swapHash = await signAndSend(toTx(JSON.stringify(intent.depositTransaction)))
+  await rpc('ExecuteIntent', { intentId, depositTransactionHash: swapHash })
   let receipt: any
   do { receipt = await rpc('WaitIntentReceipt', { intentId }) } while (!receipt.done)
-  if (receipt.intentReceipt.status !== 'SUCCEEDED') throw new Error('deposit failed; origin deposit refunded')
-  return hash
+  if (receipt.intentReceipt.status !== 'SUCCEEDED') throw new Error('swap failed; origin deposit refunded')
+
+  // 2) Deposit the vault token we now hold (approve + supply via the enter action).
+  const received = receipt.intentReceipt.summary.destinationTokenAmount as string
+  const human = (Number(received) / 10 ** opts.market.tokenDecimals).toString()
+  const depositHashes = await deposit(opts.market.id, opts.owner, human)
+  return { swapHash, depositHashes }
 }
 
 /**
@@ -149,4 +162,4 @@ async function main() {
 
 main().catch((e) => { console.error(e); process.exit(1) })
 
-export { depositAnyToken, deposit, withdraw, depositCrossChain, TRAILS_ROUTER_PLACEHOLDER_AMOUNT }
+export { depositAnyToken, deposit, withdraw, depositCrossChain, TRAILS_HYDRATE_PLACEHOLDER_AMOUNT }

@@ -2,7 +2,7 @@
 
 Build custom UIs with Trails hooks and programmatic control.
 
-> **Note**: React 19.1+ is recommended for best compatibility with Trails. React 18+ is supported but may have compatibility issues.
+> **Note**: The SDK (`0xtrails`) supports React 18 or 19 (peer dependency `^18.0.0 || ^19.0.0`).
 
 ## Setup Requirements
 
@@ -17,7 +17,7 @@ NEXT_PUBLIC_TRAILS_API_KEY=your_api_key
 ### 2. Install
 
 ```bash
-pnpm add @0xtrails/trails
+pnpm add 0xtrails
 ```
 
 ### 3. Provider + Modal (Required)
@@ -32,7 +32,7 @@ The headless SDK requires:
 
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TrailsProvider, TrailsHookModal } from '@0xtrails/trails';
+import { TrailsProvider, TrailsHookModal } from '0xtrails';
 import { wagmiConfig } from './wagmi-config';
 
 const queryClient = new QueryClient();
@@ -55,38 +55,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 ---
 
-## Core Hook: useTrailsSendTransaction
+## Core Hook: useQuote
 
-The primary hook for executing Trails intents.
+The primary hook for executing Trails intents. Executes automatically when ready.
 
 ```tsx
-import { useTrailsSendTransaction } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 function SendButton() {
-  const {
-    sendTransaction,
-    isPending,
-    isSuccess,
-    isError,
-    error,
-    data,
-  } = useTrailsSendTransaction();
-
-  const handleSend = () => {
-    sendTransaction({
-      destinationChainId: 8453,
-      destinationTokenAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-      destinationAmount: '10000000', // 10 USDC
-      destinationRecipient: '0xRecipientAddress',
-    });
-  };
+  const { quote, isPending, isSuccess, isError, error } = useQuote({
+    destinationChainId: 8453,
+    destinationTokenAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    destinationAmount: '10000000', // 10 USDC
+    destinationRecipient: '0xRecipientAddress',
+  });
 
   return (
     <div>
-      <button onClick={handleSend} disabled={isPending}>
-        {isPending ? 'Processing...' : 'Send'}
+      <button disabled={isPending || isSuccess}>
+        {isPending ? 'Processing...' : isSuccess ? 'Sent!' : 'Send'}
       </button>
-      {isSuccess && <p>Success! Intent ID: {data?.intentId}</p>}
+      {isSuccess && <p>Success! Intent ID: {quote?.intentId}</p>}
       {isError && <p>Error: {error?.message}</p>}
     </div>
   );
@@ -100,7 +89,7 @@ function SendButton() {
 ### useSupportedChains
 
 ```tsx
-import { useSupportedChains } from '@0xtrails/trails';
+import { useSupportedChains } from '0xtrails';
 
 function ChainSelector() {
   const { data: chains, isLoading, error } = useSupportedChains();
@@ -123,7 +112,7 @@ function ChainSelector() {
 ### useSupportedTokens
 
 ```tsx
-import { useSupportedTokens } from '@0xtrails/trails';
+import { useSupportedTokens } from '0xtrails';
 
 function TokenSelector({ chainId }: { chainId: number }) {
   const { data: tokens, isLoading } = useSupportedTokens({ chainId });
@@ -147,7 +136,7 @@ function TokenSelector({ chainId }: { chainId: number }) {
 Get a combined token list for UI display:
 
 ```tsx
-import { useTokenList } from '@0xtrails/trails';
+import { useTokenList } from '0xtrails';
 
 function TokenList() {
   const { data: tokenList } = useTokenList();
@@ -173,10 +162,10 @@ function TokenList() {
 
 import { useState } from 'react';
 import {
-  useTrailsSendTransaction,
+  useQuote,
   useSupportedChains,
   useSupportedTokens,
-} from '@0xtrails/trails';
+} from '0xtrails';
 import { useAccount } from 'wagmi';
 import { parseUnits } from 'viem';
 
@@ -190,21 +179,20 @@ export function CustomSwapUI() {
   const [selectedToken, setSelectedToken] = useState('');
 
   const { data: destTokens } = useSupportedTokens({ chainId: destChain });
-  const { sendTransaction, isPending, isSuccess } = useTrailsSendTransaction();
+  
+  const token = destTokens?.find((t) => t.address === selectedToken);
+  const parsedAmount = amount && token ? parseUnits(amount, token.decimals ?? 18) : undefined;
 
-  const handleSwap = () => {
-    if (!selectedToken || !amount) return;
-
-    const token = destTokens?.find((t) => t.address === selectedToken);
-    const parsedAmount = parseUnits(amount, token?.decimals ?? 18);
-
-    sendTransaction({
-      destinationChainId: destChain,
-      destinationTokenAddress: selectedToken,
-      destinationAmount: parsedAmount.toString(),
-      destinationRecipient: address!,
-    });
-  };
+  const { quote, isPending, isSuccess } = useQuote(
+    parsedAmount && selectedToken && address
+      ? {
+          destinationChainId: destChain,
+          destinationTokenAddress: selectedToken,
+          destinationAmount: parsedAmount.toString(),
+          destinationRecipient: address,
+        }
+      : null
+  );
 
   return (
     <div className="swap-container">
@@ -267,8 +255,8 @@ export function CustomSwapUI() {
         />
       </label>
 
-      <button onClick={handleSwap} disabled={isPending || !selectedToken}>
-        {isPending ? 'Swapping...' : 'Swap'}
+      <button disabled={isPending || isSuccess}>
+        {isPending ? 'Swapping...' : isSuccess ? 'Complete!' : 'Swap'}
       </button>
 
       {isSuccess && <p>Swap successful!</p>}
@@ -282,7 +270,7 @@ export function CustomSwapUI() {
 ## Intent History
 
 ```tsx
-import { useIntentHistory } from '@0xtrails/trails';
+import { useIntentHistory } from '0xtrails';
 import { useAccount } from 'wagmi';
 
 function TransactionHistory() {
@@ -309,8 +297,9 @@ function TransactionHistory() {
 ## With Calldata (Destination Contract Call)
 
 ```tsx
-import { useTrailsSendTransaction } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 import { encodeFunctionData } from 'viem';
+import { useState } from 'react';
 
 const VAULT_ABI = [{
   name: 'deposit',
@@ -326,32 +315,45 @@ function VaultDeposit({ vaultAddress, userAddress }: {
   vaultAddress: `0x${string}`;
   userAddress: `0x${string}`;
 }) {
-  const { sendTransaction, isPending } = useTrailsSendTransaction();
+  const [amount, setAmount] = useState('');
 
-  const handleDeposit = (amount: string) => {
-    // Use placeholder for Fund mode (EXACT_INPUT)
-    const PLACEHOLDER = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+  // Use placeholder for Fund mode (EXACT_INPUT)
+  const PLACEHOLDER = BigInt('0xfcbc96b9628c6a4da70c90b9e80f5f4ef82922d86bd4cb54db481ae22ed79c53');
 
-    const calldata = encodeFunctionData({
-      abi: VAULT_ABI,
-      functionName: 'deposit',
-      args: [PLACEHOLDER, userAddress],
-    });
+  const calldata = amount
+    ? encodeFunctionData({
+        abi: VAULT_ABI,
+        functionName: 'deposit',
+        args: [PLACEHOLDER, userAddress],
+      })
+    : undefined;
 
-    sendTransaction({
-      destinationChainId: 42161,
-      destinationTokenAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-      destinationRecipient: vaultAddress,
-      destinationCalldata: calldata,
-      // Source amount is what user is sending (EXACT_INPUT)
-      sourceAmount: amount,
-    });
-  };
+  const { quote, isPending, isSuccess } = useQuote(
+    amount && calldata
+      ? {
+          destinationChainId: 42161,
+          destinationTokenAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+          destinationRecipient: vaultAddress,
+          destinationCalldata: calldata,
+          // Source amount is what user is sending (EXACT_INPUT)
+          sourceAmount: amount,
+        }
+      : null
+  );
 
   return (
-    <button onClick={() => handleDeposit('1000000000')} disabled={isPending}>
-      Deposit 1000 USDC
-    </button>
+    <div>
+      <input
+        type="text"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="Amount (USDC)"
+      />
+      <button disabled={isPending || isSuccess}>
+        {isPending ? 'Depositing...' : isSuccess ? 'Complete!' : 'Deposit'}
+      </button>
+      {isSuccess && <p>Deposit successful!</p>}
+    </div>
   );
 }
 ```
@@ -367,7 +369,7 @@ import {
   getSupportedChains,
   getSupportedTokens,
   getChainInfo,
-} from '@0xtrails/trails';
+} from '0xtrails';
 
 // Get all supported chains
 const chains = await getSupportedChains();
@@ -384,36 +386,28 @@ const baseInfo = await getChainInfo(8453);
 ## Error Handling Pattern
 
 ```tsx
-import { useTrailsSendTransaction } from '@0xtrails/trails';
+import { useQuote } from '0xtrails';
 
 function RobustSendButton() {
-  const { sendTransaction, isPending, error, reset } = useTrailsSendTransaction();
-
-  const handleSend = async () => {
-    try {
-      await sendTransaction({
-        destinationChainId: 8453,
-        destinationTokenAddress: '0x...',
-        destinationAmount: '10000000',
-        destinationRecipient: '0x...',
-      });
-    } catch (e) {
-      // Error is also available via `error` state
-      console.error('Transaction failed:', e);
-    }
-  };
+  const { quote, isPending, isSuccess, error, refetch } = useQuote({
+    destinationChainId: 8453,
+    destinationTokenAddress: '0x...',
+    destinationAmount: '10000000',
+    destinationRecipient: '0x...',
+  });
 
   return (
     <div>
-      <button onClick={handleSend} disabled={isPending}>
-        Send
+      <button disabled={isPending || isSuccess}>
+        {isPending ? 'Sending...' : isSuccess ? 'Sent!' : 'Send'}
       </button>
       {error && (
         <div>
           <p>Error: {error.message}</p>
-          <button onClick={reset}>Try Again</button>
+          <button onClick={() => refetch()}>Try Again</button>
         </div>
       )}
+      {isSuccess && <p>Transaction complete!</p>}
     </div>
   );
 }

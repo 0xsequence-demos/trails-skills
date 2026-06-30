@@ -109,7 +109,7 @@ If you can't determine the right integration from context, ask **at most 3** of 
 → **Headless SDK** — hooks for routing, your UI for display
 
 ### "I want to add cross-chain swaps to my existing swap UI"
-→ **Headless SDK** — `useTrailsSendTransaction` with your components
+→ **Headless SDK** — `useQuote` with your components (executes automatically)
 
 ## Checklist Before Starting
 
